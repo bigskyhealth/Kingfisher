@@ -24,69 +24,84 @@
 //  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 //  THE SOFTWARE.
 
-#if canImport(SwiftUI) && canImport(Combine)
+#if canImport(SwiftUI)
 import SwiftUI
-import Combine
 
 /// A Kingfisher compatible SwiftUI `View` to load an image from a `Source`.
 /// Declaring a `KFImage` in a `View`'s body to trigger loading from the given `Source`.
-@available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
+@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
 struct KFImageRenderer<HoldingView> : View where HoldingView: KFImageHoldingView {
     
-    @StateObject var binder: KFImage.ImageBinder = .init()
-    let context: KFImage.Context<HoldingView>
-    
+    /// An image binder that manages loading and cancelling image related task.
+    @ObservedObject var binder: KFImage.ImageBinder
+
+    // Acts as a placeholder when loading an image.
+    var placeholder: AnyView?
+
+    // Whether the download task should be cancelled when the view disappears.
+    let cancelOnDisappear: Bool
+
+    // Configurations should be performed on the image.
+    let configurations: [(HoldingView) -> HoldingView]
+
+    init(_ context: KFImage.Context<HoldingView>) {
+        self.binder = context.binder
+        self.configurations = context.configurations
+        self.placeholder = context.placeholder
+        self.cancelOnDisappear = context.cancelOnDisappear
+    }
+
+    /// Declares the content and behavior of this view.
+    @ViewBuilder
     var body: some View {
-        
-        ZStack {
-            context.configurations
-                .reduce(HoldingView.created(from: binder.loadedImage, context: context)) {
+        if let image = binder.loadedImage {
+            configurations
+                .reduce(HoldingView.created(from: image)) {
                     current, config in config(current)
                 }
                 .opacity(binder.loaded ? 1.0 : 0.0)
-            if binder.loadedImage == nil {
-                Group {
-                    if let placeholder = context.placeholder, let view = placeholder(binder.progress) {
-                        view
-                    } else {
-                        Color.clear
-                    }
+        } else {
+            Group {
+                if placeholder != nil {
+                    placeholder
+                } else {
+                    Color.clear
                 }
-                .onAppear { [weak binder = self.binder] in
-                    guard let binder = binder else {
-                        return
-                    }
-                    if !binder.loadingOrSucceeded {
-                        binder.start(context: context)
-                    }
+            }
+            .onAppear { [weak binder = self.binder] in
+                guard let binder = binder else {
+                    return
                 }
-                .onDisappear { [weak binder = self.binder] in
-                    guard let binder = binder else {
-                        return
-                    }
-                    if context.cancelOnDisappear {
-                        binder.cancel()
-                    }
+                if !binder.loadingOrSucceeded {
+                    binder.start()
+                }
+            }
+            .onDisappear { [weak binder = self.binder] in
+                guard let binder = binder else {
+                    return
+                }
+                if self.cancelOnDisappear {
+                    binder.cancel()
                 }
             }
         }
     }
 }
 
-@available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
+@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
 extension Image {
     // Creates an Image with either UIImage or NSImage.
-    init(crossPlatformImage: KFCrossPlatformImage?) {
+    init(crossPlatformImage: KFCrossPlatformImage) {
         #if canImport(UIKit)
-        self.init(uiImage: crossPlatformImage ?? KFCrossPlatformImage())
+        self.init(uiImage: crossPlatformImage)
         #elseif canImport(AppKit)
-        self.init(nsImage: crossPlatformImage ?? KFCrossPlatformImage())
+        self.init(nsImage: crossPlatformImage)
         #endif
     }
 }
 
 #if canImport(UIKit)
-@available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
+@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
 extension UIImage.Orientation {
     func toSwiftUI() -> Image.Orientation {
         switch self {
